@@ -53,9 +53,10 @@ app.get('/api/makechange', (req, res) => {
       labels = ['2pound', '1pound', '50p', '20p', '10p', '5p', '2p', '1p'];
       break;
     case 'AUD':
-      // Australia has no 1c or 2c coins (retired 1992)
-      denominations = [200, 100, 50, 20, 10, 5];
-      labels = ['2dollar', '1dollar', '50cent', '20cent', '10cent', '5cent'];
+      // Notes: $100, $50, $20, $10, $5
+      // Coins: $2, $1, 50c, 20c, 10c, 5c (no 1c or 2c, retired 1992)
+      denominations = [10000, 5000, 2000, 1000, 500, 200, 100, 50, 20, 10, 5];
+      labels = ['note100', 'note50', 'note20', 'note10', 'note5', 'coin2dollar', 'coin1dollar', 'coin50cent', 'coin20cent', 'coin10cent', 'coin5cent'];
       break;
     default:
       denominations = [25, 10, 5, 1];
