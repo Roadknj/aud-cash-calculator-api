@@ -1,16 +1,12 @@
 {
-  "name": "aud-cash-calculator-api",
+  "name": "change-making-api",
   "version": "1.0.0",
-  "description": "API for calculating AUD cash denominations",
+  "description": "Change Making API for Adalo",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "cors": "^2.8.5"
-  },
-  "engines": {
-    "node": ">=14.0.0"
+    "express": "^5.2.1"
   }
 }
