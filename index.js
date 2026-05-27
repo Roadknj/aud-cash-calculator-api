@@ -1,130 +1,97 @@
-// Simple Node.js API for AUD Cash Calculator
-// This API calculates which denominations to use based on pocket inventory
+// index.js - Express.js API for Render deployment
 
 const express = require('express');
-const cors = require('cors');
 const app = express();
+const PORT = process.env.PORT || 4000;
 
-// Middleware
-app.use(cors());
-app.use(express.json());
-
-// AUD denominations in cents (largest to smallest)
-const DENOMINATIONS = [
-  { value: 10000, name: '$100', type: 'note' },
-  { value: 5000, name: '$50', type: 'note' },
-  { value: 2000, name: '$20', type: 'note' },
-  { value: 1000, name: '$10', type: 'note' },
-  { value: 500, name: '$5', type: 'note' },
-  { value: 200, name: '$2', type: 'coin' },
-  { value: 100, name: '$1', type: 'coin' },
-  { value: 50, name: '50c', type: 'coin' },
-  { value: 20, name: '20c', type: 'coin' },
-  { value: 10, name: '10c', type: 'coin' },
-  { value: 5, name: '5c', type: 'coin' }
-];
-
-// Health check endpoint
-app.get('/', (req, res) => {
-  res.json({ 
-    status: 'ok', 
-    message: 'AUD Cash Calculator API is running',
-    version: '1.0.0'
-  });
+// Enable CORS for Adalo
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  next();
 });
 
-// Main calculation endpoint
-app.post('/calculate', (req, res) => {
-  try {
-    const { purchaseAmount, pocket } = req.body;
+// Change Making endpoint
+app.get('/api/makechange', (req, res) => {
+  const { amount, currency = 'USD' } = req.query;
 
-    // Validation
-    if (!purchaseAmount || purchaseAmount <= 0) {
-      return res.status(400).json({
-        success: false,
-        error: 'Please provide a valid purchase amount'
-      });
-    }
-
-    if (!pocket || Object.keys(pocket).length === 0) {
-      return res.status(400).json({
-        success: false,
-        error: 'Please provide your pocket inventory'
-      });
-    }
-
-    // Convert purchase amount to cents
-    const purchaseCents = Math.round(purchaseAmount * 100);
-
-    // Calculate total available in pocket
-    let totalAvailable = 0;
-    for (const [denomValue, count] of Object.entries(pocket)) {
-      totalAvailable += parseInt(denomValue) * parseInt(count);
-    }
-
-    // Check if enough money
-    if (totalAvailable < purchaseCents) {
-      return res.json({
-        success: false,
-        error: `Not enough money. You have $${(totalAvailable / 100).toFixed(2)} but need $${purchaseAmount.toFixed(2)}`,
-        totalAvailable: totalAvailable / 100,
-        amountNeeded: purchaseAmount
-      });
-    }
-
-    // Greedy algorithm
-    let remaining = purchaseCents;
-    const breakdown = [];
-    const availableDenoms = { ...pocket };
-
-    for (const denom of DENOMINATIONS) {
-      const available = parseInt(availableDenoms[denom.value]) || 0;
-
-      if (available > 0 && remaining >= denom.value) {
-        const needed = Math.floor(remaining / denom.value);
-        const toUse = Math.min(needed, available);
-
-        if (toUse > 0) {
-          remaining -= toUse * denom.value;
-          breakdown.push({
-            value: denom.value,
-            name: denom.name,
-            type: denom.type,
-            count: toUse
-          });
-        }
-      }
-    }
-
-    // Check if exact change is possible
-    if (remaining > 0) {
-      return res.json({
-        success: false,
-        error: `Cannot make exact change with the money you have. You're $${(remaining / 100).toFixed(2)} short with your current denominations.`,
-        shortfall: remaining / 100
-      });
-    }
-
-    // Success!
-    return res.json({
-      success: true,
-      purchaseAmount: purchaseAmount,
-      totalUsed: purchaseCents / 100,
-      breakdown: breakdown,
-      remainingInPocket: (totalAvailable - purchaseCents) / 100
-    });
-
-  } catch (error) {
-    console.error('Error:', error);
-    return res.status(500).json({
-      success: false,
-      error: 'Internal server error'
-    });
+  // Validate input
+  if (!amount) {
+    return res.status(400).json([{
+      error: 'Missing required parameter: amount',
+      example: '/api/makechange?amount=99&currency=AUD'
+    }]);
   }
+
+  const cents = parseFloat(amount);
+  if (isNaN(cents) || cents < 0) {
+    return res.status(400).json([{
+      error: 'Invalid amount. Must be a positive number.',
+      provided: amount
+    }]);
+  }
+
+  // Round to avoid floating point issues
+  const totalCents = Math.round(cents);
+
+  // Define coin denominations per currency
+  let denominations, labels;
+
+  switch (currency.toUpperCase()) {
+    case 'USD':
+      denominations = [25, 10, 5, 1];
+      labels = ['quarters', 'dimes', 'nickels', 'pennies'];
+      break;
+    case 'EUR':
+      denominations = [200, 100, 50, 20, 10, 5, 2, 1];
+      labels = ['2euro', '1euro', '50cent', '20cent', '10cent', '5cent', '2cent', '1cent'];
+      break;
+    case 'GBP':
+      denominations = [200, 100, 50, 20, 10, 5, 2, 1];
+      labels = ['2pound', '1pound', '50p', '20p', '10p', '5p', '2p', '1p'];
+      break;
+    case 'AUD':
+      // Australia has no 1c or 2c coins (retired 1992)
+      denominations = [200, 100, 50, 20, 10, 5];
+      labels = ['2dollar', '1dollar', '50cent', '20cent', '10cent', '5cent'];
+      break;
+    default:
+      denominations = [25, 10, 5, 1];
+      labels = ['quarters', 'dimes', 'nickels', 'pennies'];
+  }
+
+  // Greedy algorithm for change making
+  const coins = {};
+  let remaining = totalCents;
+  let totalCoins = 0;
+
+  for (let i = 0; i < denominations.length; i++) {
+    const count = Math.floor(remaining / denominations[i]);
+    coins[labels[i]] = count;
+    totalCoins += count;
+    remaining = remaining % denominations[i];
+  }
+
+  // Return as JSON array (required by Adalo External Collections)
+  return res.status(200).json([{
+    amount: totalCents,
+    currency: currency.toUpperCase(),
+    ...coins,
+    totalCoins,
+    breakdown: Object.entries(coins)
+      .filter(([_, count]) => count > 0)
+      .map(([coin, count]) => `${count} ${coin}`)
+      .join(', ') || 'No coins needed'
+  }]);
 });
 
-// Start server
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`AUD Cash Calculator API running on port ${PORT}`);
+// Health check endpoint (recommended for Render)
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok' });
+});
+
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Change Making API running on port ${PORT}`);
 });
