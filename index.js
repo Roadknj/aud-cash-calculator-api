@@ -13,9 +13,9 @@ app.use((req, res, next) => {
   next();
 });
 
-// Change Making endpoint
-app.get('/api/makechange', (req, res) => {
-  const { amount, currency = 'USD' } = req.query;
+// Change Making endpoint (path parameters for Adalo compatibility)
+app.get('/api/makechange/:amount/:currency', (req, res) => {
+  const { amount, currency = 'AUD' } = req.params;
 
   // Validate input
   if (!amount) {
