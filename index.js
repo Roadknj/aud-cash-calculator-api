@@ -33,8 +33,8 @@ app.get('/api/makechange/:amount/:currency', (req, res) => {
     }]);
   }
 
-  // Convert dollars to cents and round to avoid floating point issues
-  const totalCents = Math.round(cents * 100);
+  // Convert dollars to cents, handle floating point precision
+  const totalCents = Math.round(parseFloat(dollars.toString()) * 100);
 
   // Define coin denominations per currency
   let denominations, labels;
