@@ -25,16 +25,16 @@ app.get('/api/makechange/:amount/:currency', (req, res) => {
     }]);
   }
 
-  const cents = parseFloat(amount);
-  if (isNaN(cents) || cents < 0) {
+  const dollars = parseFloat(amount);
+  if (isNaN(dollars) || dollars < 0) {
     return res.status(400).json([{
       error: 'Invalid amount. Must be a positive number.',
       provided: amount
     }]);
   }
 
-  // Round to avoid floating point issues
-  const totalCents = Math.round(cents);
+  // Convert dollars to cents and round to avoid floating point issues
+  const totalCents = Math.round(cents * 100);
 
   // Define coin denominations per currency
   let denominations, labels;
