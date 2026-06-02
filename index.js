@@ -309,7 +309,53 @@ app.get('/speak/:text', (req, res) => {
         msg.rate = 0.9;
         msg.pitch = 1.0;
         msg.volume = 1.0;
-        window.speechSynthesis.speak(msg);
+
+        // Wait for voices to load then select preferred voice
+        function selectVoice() {
+          const voices = window.speechSynthesis.getVoices();
+
+          // Priority order of preferred Australian/English female voices on iOS
+          const preferred = [
+            'Karen',        // iOS Australian English female (best option)
+            'Catherine',    // iOS Australian English female alternative
+            'Samantha',     // iOS US English female fallback
+            'Moira',        // iOS Irish English female fallback
+            'Veena',        // iOS Indian English female fallback
+          ];
+
+          let selectedVoice = null;
+
+          // Try preferred voices first
+          for (const name of preferred) {
+            const found = voices.find(v => v.name.includes(name));
+            if (found) {
+              selectedVoice = found;
+              break;
+            }
+          }
+
+          // Fall back to any English female voice
+          if (!selectedVoice) {
+            selectedVoice = voices.find(v =>
+              v.lang.startsWith('en') && v.name.toLowerCase().includes('female')
+            );
+          }
+
+          // Fall back to any English voice
+          if (!selectedVoice) {
+            selectedVoice = voices.find(v => v.lang.startsWith('en'));
+          }
+
+          if (selectedVoice) msg.voice = selectedVoice;
+          window.speechSynthesis.speak(msg);
+        }
+
+        // iOS requires a small delay for voices to load
+        if (window.speechSynthesis.getVoices().length > 0) {
+          selectVoice();
+        } else {
+          window.speechSynthesis.onvoiceschanged = selectVoice;
+        }
       }
     }
     // Auto speak on load
