@@ -307,7 +307,7 @@ app.get('/speak/:text', (req, res) => {
         const msg = new SpeechSynthesisUtterance(${JSON.stringify(text)});
         msg.lang = 'en-AU';
         msg.rate = 0.9;
-        msg.pitch = 1.0;
+        msg.pitch = 1.2;
         msg.volume = 1.0;
 
         // Wait for voices to load then select preferred voice
