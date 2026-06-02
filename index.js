@@ -159,7 +159,7 @@ app.get('/api/makechange/:amount/:currency/:wallet', (req, res) => {
       amountPaid: 0,
       changeOwed: 0,
       totalDenominations: 0,
-      breakdown: '',
+      breakdown: ' ',
       message: 'Unable to make this amount with your current wallet.',
       errorMessage: 'No solution found'
     }]);
@@ -248,6 +248,79 @@ app.get('/api/makechange/:amount/:currency', (req, res) => {
     totalDenominations,
     breakdown: breakdownParts.join(', ')
   }]);
+});
+
+// Speech page endpoint
+// Route: /speak/:text
+app.get('/speak/:text', (req, res) => {
+  const text = decodeURIComponent(req.params.text);
+  const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>UseMyCash</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+      background: #f5f5f5;
+      padding: 20px;
+      box-sizing: border-box;
+    }
+    .message {
+      font-size: 18px;
+      text-align: center;
+      color: #333;
+      margin-bottom: 30px;
+      line-height: 1.5;
+    }
+    .btn {
+      background: #007AFF;
+      color: white;
+      border: none;
+      border-radius: 12px;
+      padding: 16px 32px;
+      font-size: 18px;
+      cursor: pointer;
+      width: 100%;
+      max-width: 300px;
+    }
+    .btn:active {
+      background: #0056b3;
+    }
+  </style>
+</head>
+<body>
+  <div class="message">${text}</div>
+  <button class="button" onclick="speak()">🔊 Read Aloud</button>
+  <script>
+    function speak() {
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        const msg = new SpeechSynthesisUtterance(${JSON.stringify(text)});
+        msg.lang = 'en-AU';
+        msg.rate = 0.9;
+        msg.pitch = 1.0;
+        msg.volume = 1.0;
+        window.speechSynthesis.speak(msg);
+      }
+    }
+    // Auto speak on load
+    window.addEventListener('load', () => {
+      setTimeout(speak, 500);
+    });
+  </script>
+</body>
+</html>`;
+  res.setHeader('Content-Type', 'text/html');
+  res.status(200).send(html);
 });
 
 // Health check
