@@ -141,6 +141,7 @@ app.get('/api/makechange/:amount/:currency/:wallet/:userID/:datetime', (req, res
     return res.status(200).json([{
       success: false,
       notEnoughCash: true,
+      transactionID,
       amount: totalCents,
       currency: currency.toUpperCase(),
       note100: 0, note50: 0, note20: 0, note10: 0, note5: 0,
