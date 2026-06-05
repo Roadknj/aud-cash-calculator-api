@@ -211,15 +211,15 @@ app.get('/api/makechange/:amount/:currency/:wallet/:userID/:datetime', (req, res
     : `Change to receive: ${formatDollars(changeOwed)}`;
 
   return res.status(200).json([{
-    success: true,
-    notEnoughCash: false,
+    success: 1,
+    notEnoughCash: 0,
     transactionID,
     amount: totalCents,
     currency: currency.toUpperCase(),
     ...coins,
     amountPaid,
     changeOwed,
-    exactChange,
+    exactChange: exactChange ? 1 : 0,
     totalDenominations,
     breakdown,
     message,
