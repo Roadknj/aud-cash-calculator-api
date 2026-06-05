@@ -94,11 +94,12 @@ function tryMakeAmount(target, denomsCents, quantities, n) {
 }
 
 // Main change making endpoint
-// Route: /api/makechange/:amount/:currency/:wallet
+// Route: /api/makechange/:amount/:currency/:wallet/:userID/:datetime
 // wallet = comma separated quantities matching AUD_LABELS order
-// e.g. /api/makechange/23.97/AUD/2,1,3,2,1,3,2,4,5,3,2
-app.get('/api/makechange/:amount/:currency/:wallet', (req, res) => {
-  const { amount, currency, wallet } = req.params;
+// datetime = YYYYMMDDHHmmss e.g. 20260603143022
+// e.g. /api/makechange/23.97/AUD/2,1,3,2,1,3,2,4,5,3,2/12345/20260603143022
+app.get('/api/makechange/:amount/:currency/:wallet/:userID/:datetime', (req, res) => {
+  const { amount, currency, wallet, userID, datetime } = req.params;
 
   // Validate amount
   const dollars = parseFloat(amount);
@@ -116,6 +117,12 @@ app.get('/api/makechange/:amount/:currency/:wallet', (req, res) => {
 
   // Parse wallet quantities
   const walletQtys = wallet.split(',').map(q => parseInt(q) || 0);
+
+  // Generate Transaction ID
+  // Format: UMC[UserID]-YYYYMMDD-HHmmss
+  const datePart = datetime.substring(0, 8);   // 20260603
+  const timePart = datetime.substring(8, 14);  // 143022
+  const transactionID = `UMC${userID}-${datePart}-${timePart}`;
 
   // Validate wallet has 11 values
   if (walletQtys.length !== 11) {
@@ -205,6 +212,7 @@ app.get('/api/makechange/:amount/:currency/:wallet', (req, res) => {
   return res.status(200).json([{
     success: true,
     notEnoughCash: false,
+    transactionID,
     amount: totalCents,
     currency: currency.toUpperCase(),
     ...coins,
@@ -307,7 +315,7 @@ app.get('/speak/:text', (req, res) => {
         const msg = new SpeechSynthesisUtterance(${JSON.stringify(text)});
         msg.lang = 'en-AU';
         msg.rate = 0.9;
-        msg.pitch = 1.2;
+        msg.pitch = 1.0;
         msg.volume = 1.0;
 
         // Wait for voices to load then select preferred voice
