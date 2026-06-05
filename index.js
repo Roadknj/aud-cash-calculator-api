@@ -22,13 +22,39 @@ function formatDollars(cents) {
   return '$' + (cents / 100).toFixed(2);
 }
 
-// Round purchase amount up to nearest 5 cents (AUD cash rounding)
+// Round purchase amount to nearest 5 cents (AUD cash rounding)
 function roundToNearest5(cents) {
   return Math.round(cents / 5) * 5;
 }
 
+// Try to make exact amount using dynamic programming
+function tryMakeAmount(target, denomsCents, quantities, n) {
+  const dp = new Array(target + 1).fill(Infinity);
+  dp[0] = 0;
+  const used = Array.from({ length: target + 1 }, () => new Array(n).fill(0));
+
+  for (let i = 0; i < n; i++) {
+    const denom = denomsCents[i];
+    const maxQty = quantities[i];
+    for (let amt = target; amt >= denom; amt--) {
+      for (let qty = 1; qty <= maxQty; qty++) {
+        if (amt - denom * qty < 0) break;
+        const prevAmt = amt - denom * qty;
+        if (dp[prevAmt] !== Infinity && dp[prevAmt] + qty < dp[amt]) {
+          dp[amt] = dp[prevAmt] + qty;
+          used[amt] = [...used[prevAmt]];
+          used[amt][i] = qty;
+        }
+      }
+    }
+  }
+
+  if (dp[target] === Infinity) return null;
+  return used[target];
+}
+
 // Bounded dynamic programming change making algorithm
-function boundedChangemaking(targetCents, denomsCents, quantities) {
+function boundedChangeMaking(targetCents, denomsCents, quantities) {
   const n = denomsCents.length;
 
   // Check total available cash
@@ -41,7 +67,6 @@ function boundedChangemaking(targetCents, denomsCents, quantities) {
     return { success: false, notEnoughCash: true };
   }
 
-  // Find minimum overpayment amount we can make
   // Try exact first, then increments of 5 cents up to totalAvailable
   for (let target = targetCents; target <= totalAvailable; target += 5) {
     const result = tryMakeAmount(target, denomsCents, quantities, n);
@@ -58,209 +83,7 @@ function boundedChangemaking(targetCents, denomsCents, quantities) {
   return { success: false, notEnoughCash: false };
 }
 
-// Try to make exact amount using dynamic programming
-function tryMakeAmount(target, denomsCents, quantities, n) {
-  // dp[i] = minimum number of denominations to make amount i
-  // prev[i] = which denomination index was used to reach amount i
-  const dp = new Array(target + 1).fill(Infinity);
-  const prev = new Array(target + 1).fill(-1);
-  const prevCount = new Array(target + 1).fill(0);
-  dp[0] = 0;
-
-  // Track how many of each denomination used at each amount
-  // Use bounded knapsack approach
-  const used = Array.from({ length: target + 1 }, () => new Array(n).fill(0));
-
-  for (let i = 0; i < n; i++) {
-    const denom = denomsCents[i];
-    const maxQty = quantities[i];
-
-    // Process from high to low to handle bounded quantities
-    for (let amt = target; amt >= denom; amt--) {
-      for (let qty = 1; qty <= maxQty; qty++) {
-        if (amt - denom * qty < 0) break;
-        const prev_amt = amt - denom * qty;
-        if (dp[prev_amt] !== Infinity && dp[prev_amt] + qty < dp[amt]) {
-          dp[amt] = dp[prev_amt] + qty;
-          used[amt] = [...used[prev_amt]];
-          used[amt][i] = qty;
-        }
-      }
-    }
-  }
-
-  if (dp[target] === Infinity) return null;
-  return used[target];
-}
-
-// Main change making endpoint
-// Route: /api/makechange/:amount/:currency/:wallet/:userID/:datetime
-// wallet = comma separated quantities matching AUD_LABELS order
-// datetime = YYYYMMDDHHmmss e.g. 20260603143022
-// e.g. /api/makechange/23.97/AUD/2,1,3,2,1,3,2,4,5,3,2/12345/20260603143022
-app.get('/api/makechange/:amount/:currency/:wallet/:userID/:datetime', (req, res) => {
-  const { amount, currency, wallet, userID, datetime } = req.params;
-
-  // Validate amount
-  const dollars = parseFloat(amount);
-  if (isNaN(dollars) || dollars <= 0) {
-    return res.status(400).json([{
-      success: false,
-      errorMessage: 'Invalid amount. Must be a positive number.',
-      message: 'Invalid amount entered.'
-    }]);
-  }
-
-  // Convert dollars to cents and apply AUD cash rounding
-  const rawCents = Math.round(dollars * 100);
-  const totalCents = roundToNearest5(rawCents);
-
-  // Parse wallet quantities
-  const walletQtys = wallet.split(',').map(q => parseInt(q) || 0);
-
-  // Generate Transaction ID
-  // Format: UMC[UserID]-YYYYMMDD-HHmmss
-  const datePart = datetime.substring(0, 8);   // 20260603
-  const timePart = datetime.substring(8, 14);  // 143022
-  const transactionID = `UMC${userID}-${datePart}-${timePart}`;
-
-  // Validate wallet has 11 values
-  if (walletQtys.length !== 11) {
-    return res.status(400).json([{
-      success: false,
-      errorMessage: 'Invalid wallet format. Expected 11 comma separated values.',
-      message: 'Wallet data is invalid.'
-    }]);
-  }
-
-  // Run bounded change making algorithm
-  const result = boundedChangemaking(totalCents, AUD_DENOMS, walletQtys);
-
-  // Not enough cash
-  if (result.notEnoughCash) {
-    return res.status(200).json([{
-      success: false,
-      notEnoughCash: true,
-      transactionID,
-      amount: totalCents,
-      currency: currency.toUpperCase(),
-      note100: 0, note50: 0, note20: 0, note10: 0, note5: 0,
-      coin2dollar: 0, coin1dollar: 0, coin50cent: 0, coin20cent: 0, coin10cent: 0, coin5cent: 0,
-      amountPaid: 0,
-      changeOwed: 0,
-      totalDenominations: 0,
-      breakdown: '',
-      message: `You don't have enough cash for this purchase of ${formatDollars(totalCents)}.`,
-      errorMessage: 'Not enough cash'
-    }]);
-  }
-
-  // No solution found (shouldn't happen if notEnoughCash check passes)
-  if (!result.success) {
-    return res.status(200).json([{
-      success: false,
-      notEnoughCash: false,
-      amount: totalCents,
-      currency: currency.toUpperCase(),
-      note100: 0, note50: 0, note20: 0, note10: 0, note5: 0,
-      coin2dollar: 0, coin1dollar: 0, coin50cent: 0, coin20cent: 0, coin10cent: 0, coin5cent: 0,
-      amountPaid: 0,
-      changeOwed: 0,
-      totalDenominations: 0,
-      breakdown: ' ',
-      message: 'Unable to make this amount with your current wallet.',
-      errorMessage: 'No solution found'
-    }]);
-  }
-
-  // Build response
-  const usedCounts = result.usedCounts;
-  const amountPaid = result.amountPaid;
-  const changeOwed = amountPaid - totalCents;
-  const exactChange = changeOwed === 0;
-  let totalDenominations = 0;
-  const coins = {};
-
-  // Build breakdown text
-  const breakdownParts = [];
-  const speechParts = [];
-
-  for (let i = 0; i < AUD_LABELS.length; i++) {
-    const qty = usedCounts[i];
-    coins[AUD_LABELS[i]] = qty;
-    if (qty > 0) {
-      totalDenominations += qty;
-      breakdownParts.push(`${qty} x ${AUD_NAMES[i]}`);
-      speechParts.push(`${qty} ${AUD_NAMES[i]}${qty > 1 ? 's' : ''}`);
-    }
-  }
-
-  const breakdown = breakdownParts.join(', ');
-
-  // Build spoken message
-  let message = `For a purchase of ${formatDollars(totalCents)}, hand over ${speechParts.join(', and ')}.`;
-  if (!exactChange) {
-    message += ` You will receive ${formatDollars(changeOwed)} change.`;
-  } else {
-    message += ` That is exact change.`;
-  }
-
-  // Build change owed message
-  const changeMessage = exactChange
-    ? 'Exact change — no change required.'
-    : `Change to receive: ${formatDollars(changeOwed)}`;
-
-  return res.status(200).json([{
-    success: 1,
-    notEnoughCash: 0,
-    transactionID,
-    amount: totalCents,
-    currency: currency.toUpperCase(),
-    ...coins,
-    amountPaid,
-    changeOwed,
-    exactChange: exactChange ? 1 : 0,
-    totalDenominations,
-    breakdown,
-    message,
-    changeMessage,
-    errorMessage: ''
-  }]);
-});
-
-// Keep original endpoint for backward compatibility (no wallet)
-app.get('/api/makechange/:amount/:currency', (req, res) => {
-  const { amount, currency = 'AUD' } = req.params;
-  const dollars = parseFloat(amount);
-  if (isNaN(dollars) || dollars <= 0) {
-    return res.status(400).json([{ error: 'Invalid amount.' }]);
-  }
-  const totalCents = roundToNearest5(Math.round(dollars * 100));
-  const denomsCents = AUD_DENOMS;
-  const unlimitedQtys = new Array(11).fill(999);
-  const result = boundedChangemaking(totalCents, denomsCents, unlimitedQtys);
-  const coins = {};
-  let totalDenominations = 0;
-  const breakdownParts = [];
-  for (let i = 0; i < AUD_LABELS.length; i++) {
-    const qty = result.usedCounts[i];
-    coins[AUD_LABELS[i]] = qty;
-    if (qty > 0) {
-      totalDenominations += qty;
-      breakdownParts.push(`${qty} x ${AUD_NAMES[i]}`);
-    }
-  }
-  return res.status(200).json([{
-    amount: totalCents,
-    currency: currency.toUpperCase(),
-    ...coins,
-    totalDenominations,
-    breakdown: breakdownParts.join(', ')
-  }]);
-});
-
 // Speech page endpoint
-// Route: /speak/:text
 app.get('/speak/:text', (req, res) => {
   const text = decodeURIComponent(req.params.text);
   const html = `
@@ -301,14 +124,12 @@ app.get('/speak/:text', (req, res) => {
       width: 100%;
       max-width: 300px;
     }
-    .btn:active {
-      background: #0056b3;
-    }
+    .btn:active { background: #0056b3; }
   </style>
 </head>
 <body>
   <div class="message">${text}</div>
-  <button class="button" onclick="speak()">🔊 Read Aloud</button>
+  <button class="btn" onclick="speak()">🔊 Read Aloud</button>
   <script>
     function speak() {
       if ('speechSynthesis' in window) {
@@ -316,50 +137,25 @@ app.get('/speak/:text', (req, res) => {
         const msg = new SpeechSynthesisUtterance(${JSON.stringify(text)});
         msg.lang = 'en-AU';
         msg.rate = 0.9;
-        msg.pitch = 1.0;
+        msg.pitch = 1.2;
         msg.volume = 1.0;
-
-        // Wait for voices to load then select preferred voice
         function selectVoice() {
           const voices = window.speechSynthesis.getVoices();
-
-          // Priority order of preferred Australian/English female voices on iOS
-          const preferred = [
-            'Karen',        // iOS Australian English female (best option)
-            'Catherine',    // iOS Australian English female alternative
-            'Samantha',     // iOS US English female fallback
-            'Moira',        // iOS Irish English female fallback
-            'Veena',        // iOS Indian English female fallback
-          ];
-
+          const preferred = ['Karen', 'Catherine', 'Samantha', 'Moira', 'Veena'];
           let selectedVoice = null;
-
-          // Try preferred voices first
           for (const name of preferred) {
             const found = voices.find(v => v.name.includes(name));
-            if (found) {
-              selectedVoice = found;
-              break;
-            }
+            if (found) { selectedVoice = found; break; }
           }
-
-          // Fall back to any English female voice
           if (!selectedVoice) {
-            selectedVoice = voices.find(v =>
-              v.lang.startsWith('en') && v.name.toLowerCase().includes('female')
-            );
+            selectedVoice = voices.find(v => v.lang.startsWith('en') && v.name.toLowerCase().includes('female'));
           }
-
-          // Fall back to any English voice
           if (!selectedVoice) {
             selectedVoice = voices.find(v => v.lang.startsWith('en'));
           }
-
           if (selectedVoice) msg.voice = selectedVoice;
           window.speechSynthesis.speak(msg);
         }
-
-        // iOS requires a small delay for voices to load
         if (window.speechSynthesis.getVoices().length > 0) {
           selectVoice();
         } else {
@@ -367,15 +163,177 @@ app.get('/speak/:text', (req, res) => {
         }
       }
     }
-    // Auto speak on load
-    window.addEventListener('load', () => {
-      setTimeout(speak, 500);
-    });
+    window.addEventListener('load', () => { setTimeout(speak, 500); });
   </script>
 </body>
 </html>`;
   res.setHeader('Content-Type', 'text/html');
   res.status(200).send(html);
+});
+
+// Main change making endpoint
+// Route: /api/makechange/:amount/:currency/:wallet/:userID/:datetime
+// wallet = comma separated quantities in AUD_LABELS order
+// datetime = YYYYMMDDHHmmss e.g. 20260603143022
+app.get('/api/makechange/:amount/:currency/:wallet/:userID/:datetime', (req, res) => {
+  const { amount, currency, wallet, userID, datetime } = req.params;
+
+  // Validate amount
+  const dollars = parseFloat(amount);
+  if (isNaN(dollars) || dollars <= 0) {
+    return res.status(400).json([{
+      success: 0,
+      notEnoughCash: 0,
+      transactionID: '',
+      errorMessage: 'Invalid amount. Must be a positive number.',
+      message: 'Invalid amount entered.'
+    }]);
+  }
+
+  // Generate Transaction ID: UMC[UserID]-YYYYMMDD-HHmmss
+  const datePart = datetime.substring(0, 8);
+  const timePart = datetime.substring(8, 14);
+  const transactionID = `UMC${userID}-${datePart}-${timePart}`;
+
+  // Convert dollars to cents and apply AUD cash rounding
+  const totalCents = roundToNearest5(Math.round(dollars * 100));
+
+  // Parse wallet quantities
+  const walletQtys = wallet.split(',').map(q => parseInt(q) || 0);
+
+  if (walletQtys.length !== 11) {
+    return res.status(400).json([{
+      success: 0,
+      notEnoughCash: 0,
+      transactionID,
+      errorMessage: 'Invalid wallet format. Expected 11 comma separated values.',
+      message: 'Wallet data is invalid.'
+    }]);
+  }
+
+  // Run bounded change making algorithm
+  const result = boundedChangeMaking(totalCents, AUD_DENOMS, walletQtys);
+
+  // Not enough cash
+  if (result.notEnoughCash) {
+    return res.status(200).json([{
+      success: 0,
+      notEnoughCash: 1,
+      transactionID,
+      amount: totalCents,
+      currency: currency.toUpperCase(),
+      note100: 0, note50: 0, note20: 0, note10: 0, note5: 0,
+      coin2dollar: 0, coin1dollar: 0, coin50cent: 0, coin20cent: 0, coin10cent: 0, coin5cent: 0,
+      amountPaid: 0,
+      changeOwed: 0,
+      exactChange: 0,
+      totalDenominations: 0,
+      breakdown: ' ',
+      message: `You don't have enough cash for this purchase of ${formatDollars(totalCents)}.`,
+      changeMessage: ' ',
+      errorMessage: 'Not enough cash'
+    }]);
+  }
+
+  // No solution found
+  if (!result.success) {
+    return res.status(200).json([{
+      success: 0,
+      notEnoughCash: 0,
+      transactionID,
+      amount: totalCents,
+      currency: currency.toUpperCase(),
+      note100: 0, note50: 0, note20: 0, note10: 0, note5: 0,
+      coin2dollar: 0, coin1dollar: 0, coin50cent: 0, coin20cent: 0, coin10cent: 0, coin5cent: 0,
+      amountPaid: 0,
+      changeOwed: 0,
+      exactChange: 0,
+      totalDenominations: 0,
+      breakdown: ' ',
+      message: 'Unable to make this amount with your current wallet.',
+      changeMessage: ' ',
+      errorMessage: 'No solution found'
+    }]);
+  }
+
+  // Build success response
+  const usedCounts = result.usedCounts;
+  const amountPaid = result.amountPaid;
+  const changeOwed = amountPaid - totalCents;
+  const exactChange = changeOwed === 0;
+  let totalDenominations = 0;
+  const coins = {};
+  const breakdownParts = [];
+  const speechParts = [];
+
+  for (let i = 0; i < AUD_LABELS.length; i++) {
+    const qty = usedCounts[i];
+    coins[AUD_LABELS[i]] = qty;
+    if (qty > 0) {
+      totalDenominations += qty;
+      breakdownParts.push(`${qty} x ${AUD_NAMES[i]}`);
+      speechParts.push(`${qty} ${AUD_NAMES[i]}${qty > 1 ? 's' : ''}`);
+    }
+  }
+
+  const breakdown = breakdownParts.join(', ');
+  let message = `For a purchase of ${formatDollars(totalCents)}, hand over ${speechParts.join(', and ')}.`;
+  if (!exactChange) {
+    message += ` You will receive ${formatDollars(changeOwed)} change.`;
+  } else {
+    message += ` That is exact change.`;
+  }
+
+  const changeMessage = exactChange
+    ? 'Exact change, no change required.'
+    : `Change to receive: ${formatDollars(changeOwed)}`;
+
+  return res.status(200).json([{
+    success: 1,
+    notEnoughCash: 0,
+    transactionID,
+    amount: totalCents,
+    currency: currency.toUpperCase(),
+    ...coins,
+    amountPaid,
+    changeOwed,
+    exactChange: exactChange ? 1 : 0,
+    totalDenominations,
+    breakdown,
+    message,
+    changeMessage,
+    errorMessage: ' '
+  }]);
+});
+
+// Backward compatible endpoint (no wallet)
+app.get('/api/makechange/:amount/:currency', (req, res) => {
+  const { amount, currency = 'AUD' } = req.params;
+  const dollars = parseFloat(amount);
+  if (isNaN(dollars) || dollars <= 0) {
+    return res.status(400).json([{ error: 'Invalid amount.' }]);
+  }
+  const totalCents = roundToNearest5(Math.round(dollars * 100));
+  const unlimitedQtys = new Array(11).fill(999);
+  const result = boundedChangeMaking(totalCents, AUD_DENOMS, unlimitedQtys);
+  const coins = {};
+  let totalDenominations = 0;
+  const breakdownParts = [];
+  for (let i = 0; i < AUD_LABELS.length; i++) {
+    const qty = result.usedCounts[i];
+    coins[AUD_LABELS[i]] = qty;
+    if (qty > 0) {
+      totalDenominations += qty;
+      breakdownParts.push(`${qty} x ${AUD_NAMES[i]}`);
+    }
+  }
+  return res.status(200).json([{
+    amount: totalCents,
+    currency: currency.toUpperCase(),
+    ...coins,
+    totalDenominations,
+    breakdown: breakdownParts.join(', ')
+  }]);
 });
 
 // Health check
