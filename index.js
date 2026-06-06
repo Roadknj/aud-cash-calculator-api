@@ -173,7 +173,8 @@ app.get('/speak/:text', (req, res) => {
 
 // Main change making endpoint
 // Route: /api/makechange/:amount/:currency/:wallet/:userID
-app.get('/api/makechange/:amount/:currency/:wallet/:userID', (req, res) => {
+// Optional :datetime parameter is accepted but ignored (server time is used)
+app.get('/api/makechange/:amount/:currency/:wallet/:userID/:datetime?', (req, res) => {
   const { amount, currency, wallet, userID } = req.params;
 
   // Validate amount
