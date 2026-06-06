@@ -172,11 +172,9 @@ app.get('/speak/:text', (req, res) => {
 });
 
 // Main change making endpoint
-// Route: /api/makechange/:amount/:currency/:wallet/:userID/:datetime
-// wallet = comma separated quantities in AUD_LABELS order
-// datetime = YYYYMMDDHHmmss e.g. 20260603143022
-app.get('/api/makechange/:amount/:currency/:wallet/:userID/:datetime', (req, res) => {
-  const { amount, currency, wallet, userID, datetime } = req.params;
+// Route: /api/makechange/:amount/:currency/:wallet/:userID
+app.get('/api/makechange/:amount/:currency/:wallet/:userID', (req, res) => {
+  const { amount, currency, wallet, userID } = req.params;
 
   // Validate amount
   const dollars = parseFloat(amount);
