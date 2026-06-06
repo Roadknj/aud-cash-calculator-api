@@ -171,10 +171,10 @@ app.get('/speak/:text', (req, res) => {
   res.status(200).send(html);
 });
 
-// Main change making endpoint
-// Route: /api/makechange/:amount/:currency/:wallet/:userID
-// Optional :datetime parameter is accepted but ignored (server time is used)
-app.get('/api/makechange/:amount/:currency/:wallet/:userID/:datetime?', (req, res) => {
+// Main change making endpoint - with optional datetime (ignored, server time used)
+// Handles both /api/makechange/:amount/:currency/:wallet/:userID
+// and /api/makechange/:amount/:currency/:wallet/:userID/:datetime
+async function handleMakeChange(req, res) {
   const { amount, currency, wallet, userID } = req.params;
 
   // Validate amount
@@ -303,7 +303,11 @@ app.get('/api/makechange/:amount/:currency/:wallet/:userID/:datetime?', (req, re
     changeMessage,
     errorMessage: ' '
   }]);
-});
+}
+
+// Register both routes pointing to the same handler
+app.get('/api/makechange/:amount/:currency/:wallet/:userID/:datetime', handleMakeChange);
+app.get('/api/makechange/:amount/:currency/:wallet/:userID', handleMakeChange);
 
 // Backward compatible endpoint (no wallet)
 app.get('/api/makechange/:amount/:currency', (req, res) => {
