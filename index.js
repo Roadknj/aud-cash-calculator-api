@@ -139,6 +139,12 @@ function handleMakeChange(req, res) {
     }]);
   }
 
+  // Calculate starting and ending wallet values
+  let startingWalletValue = 0;
+  for (let i = 0; i < AUD_DENOMS.length; i++) {
+    startingWalletValue += AUD_DENOMS[i] * walletQtys[i];
+  }
+
   const result = boundedChangeMaking(totalCents, AUD_DENOMS, walletQtys);
 
   // Not enough cash
@@ -150,6 +156,8 @@ function handleMakeChange(req, res) {
       coin2dollar: 0, coin1dollar: 0, coin50cent: 0, coin20cent: 0, coin10cent: 0, coin5cent: 0,
       amountPaid: 0, changeOwed: 0, exactChange: 0, totalDenominations: 0,
       breakdown: ' ',
+      startingWalletValue,
+      endingWalletValue: startingWalletValue,
       message: `You don't have enough cash for this purchase of ${formatDollars(totalCents)}.`,
       changeMessage: ' ', errorMessage: 'Not enough cash'
     }]);
@@ -164,6 +172,8 @@ function handleMakeChange(req, res) {
       coin2dollar: 0, coin1dollar: 0, coin50cent: 0, coin20cent: 0, coin10cent: 0, coin5cent: 0,
       amountPaid: 0, changeOwed: 0, exactChange: 0, totalDenominations: 0,
       breakdown: ' ',
+      startingWalletValue,
+      endingWalletValue: startingWalletValue,
       message: 'Unable to make this amount with your current wallet.',
       changeMessage: ' ', errorMessage: 'No solution found'
     }]);
@@ -189,6 +199,28 @@ function handleMakeChange(req, res) {
     }
   }
 
+  // Calculate ending wallet value
+  let endingWalletValue = startingWalletValue;
+  for (let i = 0; i < AUD_DENOMS.length; i++) {
+    endingWalletValue -= AUD_DENOMS[i] * usedCounts[i];
+  }
+
+  // Calculate suggested change breakdown using greedy algorithm
+  let changeRemaining = changeOwed;
+  const changeCounts = {};
+  const changeBreakdownParts = [];
+  const changeSpeechParts = [];
+  for (let i = 0; i < AUD_DENOMS.length; i++) {
+    const qty = Math.floor(changeRemaining / AUD_DENOMS[i]);
+    changeCounts[`change_${AUD_LABELS[i]}`] = qty;
+    changeRemaining -= qty * AUD_DENOMS[i];
+    if (qty > 0) {
+      changeBreakdownParts.push(`${qty} x ${AUD_NAMES[i]}`);
+      changeSpeechParts.push(`${qty} ${AUD_NAMES[i]}${qty > 1 ? 's' : ''}`);
+    }
+  }
+  const changeBreakdown = changeBreakdownParts.join(', ');
+
   const breakdown = breakdownParts.join(', ');
   let message = `For a purchase of ${formatDollars(totalCents)}, hand over ${speechParts.join(', and ')}.`;
   message += exactChange ? ' That is exact change.' : ` You will receive ${formatDollars(changeOwed)} change.`;
@@ -201,6 +233,10 @@ function handleMakeChange(req, res) {
     amountPaid, changeOwed,
     exactChange: exactChange ? 1 : 0,
     totalDenominations, breakdown, message, changeMessage,
+    ...changeCounts,
+    changeBreakdown,
+    startingWalletValue,
+    endingWalletValue,
     errorMessage: ' '
   }]);
 }
